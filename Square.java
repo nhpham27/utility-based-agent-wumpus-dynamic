@@ -14,6 +14,7 @@ public class Square {
 	boolean hasBreeze; // the agent senses breeeze in this square
 	boolean hasGlitter;
 	double value;
+	double pWumpus;
 	int x,y; // coordinate of this square in the world state
 	
 	Square(){
@@ -25,6 +26,7 @@ public class Square {
 	this.hasStench = false;
 	this.hasBreeze = false;
 	this.hasGlitter = false;
+	this.pWumpus = 0;
 	this.agentDirection = ' ';
 	this.value = 0;
 	x = y = -1;
@@ -55,7 +57,7 @@ public class Square {
 		square.agentDirection =this.agentDirection;
 		square.x = this.x;
 		square.y = this.y;
-		
+		square.pWumpus = this.pWumpus;
 		return square;
 	}
 }

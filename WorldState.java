@@ -1,15 +1,19 @@
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Random;
 
 public class WorldState {
 	private boolean alreadyShot;
 	private int worldStateSize = 6;
 	public Square[][] state;
 	private WumpusModel wumpusModel;
+	private int step = 0;
 	
 	WorldState(){
 		// initialize the state of the world
 		state = new Square[this.worldStateSize][this.worldStateSize];
-		this.wumpusModel = new WumpusModel(0.2,0.2,0.2,0.2,0.2);
+		this.wumpusModel = new WumpusModel(0.2,0.2,0.2,0.2,0.2,step);
 		for(int i = 0;i < this.worldStateSize; i++) {
 			for(int j = 0;j < this.worldStateSize; j++) {
 				state[i][j] = new Square();
@@ -124,6 +128,34 @@ public class WorldState {
 	// update the world state based on the current percept and 
 	// most recent action
 	public void updateState(int action, boolean[] percepts) {
+		// update number of steps has passed
+		this.step++;
+		this.wumpusModel.printProbs();
+		// update possible positions of Wumpus
+		ArrayList<Square> wumpusSquares = new ArrayList<>();
+		// simulate movement of the wumpus based on its model
+		for(int i = 1;i < this.worldStateSize - 1; i++) {
+			for(int j = 1;j < this.worldStateSize - 1; j++) {
+				if(this.state[i][j].isWumpus > 0) {
+					this.state[i][j].pWumpus = this.state[i][j].isWumpus;
+					wumpusSquares.add(this.state[i][j]);
+				}
+				if(this.state[i][j].pWumpus > 0) {
+					wumpusSquares.add(this.state[i][j]);
+				}
+			}
+		}
+		
+		for(Square s: wumpusSquares) {
+			int x = s.x;
+			int y = s.y;
+			// current, top, bottom, right, left
+			Square[] tempSquares = {state[x][y], state[x][y+1], state[x][y-1],state[x+1][y], state[x-1][y]};
+			for(int z = 0; z < tempSquares.length; z++) {
+				tempSquares[z].pWumpus = this.wumpusModel.pMoves[z]*s.pWumpus;
+			}
+		}
+		
 		// get the percept
 		boolean bump = percepts[0];
 		boolean glitter = percepts[1];
@@ -164,44 +196,61 @@ public class WorldState {
 		// increase the number of visit in this current square
 		agentLoc.numVisit += 1;
 		// update the percepts in current square
+		agentLoc.isWumpus = 0;
 		if(stench == true) {
+			// update wumpus model
+			this.updateWumpusModel();
+			
+			// update the location of last stench
+			this.wumpusModel.lastX = agentLoc.x;
+			this.wumpusModel.lastY = agentLoc.y;
+			this.wumpusModel.step = this.step;
 			// clear all squares that have Wumpus
 			for(int i = 1;i < this.worldStateSize - 1; i++) {
 				for(int j = 1;j < this.worldStateSize - 1; j++) {
 					this.state[i][j].isWumpus = 0;
+					this.state[i][j].pWumpus = 0;
 				}
 			}
 			agentLoc.hasStench = true;
 			int numWall = 0;
 			
+			// count number of walls around agent
 			for(Square s : aroundSquares) {
-				if(s.isWall || s.isSafe) {
+				if(s.isWall) {
 					numWall++;
 				}
 			}
+			
+			// set the probability of the wumpus
 			for(Square s : aroundSquares) {
-				if(!s.isWall && !s.isSafe) {
-					s.isWumpus = 1.0/numWall;
+				if(!s.isWall) {
+					if(numWall != 0)
+						s.isWumpus = 1.0/numWall;
+					else
+						s.isWumpus = 0.25;
 				}
 			}
 		}
 		else {
 			agentLoc.hasStench = false;
 			for(Square s : aroundSquares) {
-				if(!s.isWall && !s.isSafe) {
-					s.isWumpus = 0;
-				}
+				s.isWumpus = 0;
 			}
 		}
 		
+		// update the location of pits
 		if(breeze == true) {
 			agentLoc.hasBreeze = true;
 			int numWall = 0;
+			// count number of walls and safe squares around wumpus
 			for(Square s : aroundSquares) {
 				if(s.isWall || s.isSafe) {
 					numWall++;
 				}
 			}
+			
+			// set the probability of the Pits
 			for(Square s : aroundSquares) {
 				if(!s.isWall && !s.isSafe) {
 					s.isPit = 1.0/numWall;
@@ -209,6 +258,7 @@ public class WorldState {
 			}
 		}
 		else {
+			// reset the probabilities if there is no breeze
 			for(Square s : aroundSquares) {
 				if(!s.isWall && !s.isSafe) {
 					s.isPit = 0;
@@ -257,6 +307,49 @@ public class WorldState {
 					squares.get("front").isSafe = true;
 				}
 			}
+		}
+	}
+	
+	// update Wumpus Model
+	private void updateWumpusModel() {
+		Square agentLoc = this.getAgentLocation();
+		int moveX = agentLoc.x - this.wumpusModel.lastX;
+		int moveY = agentLoc.y - this.wumpusModel.lastY;
+		
+		//stay, north, south, east, west
+		double[] probs = {0,0,0,0,0};
+		
+		// check if wumpus go up or down
+		if(moveX > 0) {
+			probs[3] = moveX;
+		}
+		else {
+			probs[4] = Math.abs(moveX);
+		}
+		
+		// check if wumpus go left or right
+		if(moveY > 0) {
+			probs[1] = moveY;
+		}
+		else {
+			probs[2] = Math.abs(moveY);
+		}
+		
+		int numMoves = this.step - this.wumpusModel.step;
+		
+		int leftMoves = numMoves - Math.abs(moveX) - Math.abs(moveY);
+		Random rand = new Random();
+		for(int i = 0; i <= leftMoves; i++) {
+			probs[rand.nextInt(5)] += 1;
+		}
+		
+		for(int i = 0; i < probs.length; i++) {
+			this.wumpusModel.pMoves[i] = this.wumpusModel.pMoves[i]*10 + probs[i];
+		}
+		
+		double sum = Arrays.stream(this.wumpusModel.pMoves).sum();
+		for(int i = 0; i < probs.length; i++) {
+			this.wumpusModel.pMoves[i] = this.wumpusModel.pMoves[i] / sum;
 		}
 	}
 	
@@ -365,7 +458,7 @@ public class WorldState {
 		
 		// The agent is penalized for being in a square 
 		// for multiple time steps
-		score -= agentLoc.numVisit;
+		score -= (agentLoc.numVisit+agentLoc.pWumpus);
 		
 		// reward the agent for facing the squares that are not obstacles
 		if(!frontSquare.isWall && frontSquare.isWumpus < 0.1 && frontSquare.isPit < 0.1)
